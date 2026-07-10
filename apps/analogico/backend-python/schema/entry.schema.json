@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "entry.schema.json",
+  "title": "Dictionary entry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "headword",
+    "entry_type",
+    "raw_text",
+    "pdf_page_index",
+    "page_image",
+    "verification_status"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable unique slug: slug(headword)-pPDFPAGE-seq"
+    },
+    "headword": {
+      "type": "string"
+    },
+    "entry_type": {
+      "type": "string",
+      "enum": ["index", "category", "unknown"]
+    },
+    "raw_text": {
+      "type": "string",
+      "description": "Verbatim transcription of the entry"
+    },
+    "references": {
+      "type": ["array", "null"],
+      "items": { "type": "string" }
+    },
+    "related_terms": {
+      "type": ["array", "null"],
+      "items": { "type": "string" }
+    },
+    "pdf_page_index": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "0-based index into the rendered PDF page images, matches page image filename"
+    },
+    "printed_page_number": {
+      "type": ["string", "null"],
+      "description": "Page number as printed on the physical page, may be roman numeral or null (unnumbered front matter)"
+    },
+    "page_image": {
+      "type": "string",
+      "description": "Path relative to pilot/data/, e.g. pages/page-0007.jpg"
+    },
+    "region_hint": {
+      "type": ["object", "null"],
+      "description": "Optional coarse bounding box fraction {top, bottom, col}, omitted for pilot v1"
+    },
+    "verification_status": {
+      "type": "string",
+      "enum": ["unverified", "verified", "flagged"],
+      "default": "unverified"
+    },
+    "verified_by": {
+      "type": ["string", "null"]
+    },
+    "verified_at": {
+      "type": ["string", "null"],
+      "description": "ISO 8601 timestamp"
+    },
+    "extraction_notes": {
+      "type": ["string", "null"],
+      "description": "Free text: uncertainty, smudges, skew, anything preventing a confident transcription"
+    }
+  }
+}

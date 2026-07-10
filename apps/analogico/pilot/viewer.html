@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>Dicionário Analógico — Viewer do Piloto</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --border: #ccc;
+    --bg-panel: #f6f6f6;
+    --flag: #b45309;
+    --verified: #15803d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --border: #444;
+      --bg-panel: #1e1e1e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, sans-serif;
+    margin: 0;
+    display: flex;
+    height: 100vh;
+  }
+  #sidebar {
+    width: 320px;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    overflow: hidden;
+  }
+  #search {
+    width: 100%;
+    padding: 8px;
+    font-size: 1rem;
+    margin-bottom: 8px;
+  }
+  #results {
+    overflow-y: auto;
+    flex: 1;
+  }
+  #results div.result {
+    padding: 6px 8px;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  #results div.result:hover {
+    background: var(--bg-panel);
+  }
+  #results div.result.active {
+    background: #2563eb;
+    color: white;
+  }
+  .status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+  }
+  .status-verified { background: var(--verified); }
+  .status-flagged { background: var(--flag); }
+  .status-unverified { background: #999; }
+  #main {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+  #detail-pane, #image-pane {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+  }
+  #detail-pane {
+    border-right: 1px solid var(--border);
+  }
+  #image-pane img {
+    max-width: 100%;
+  }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+  dt { font-weight: 600; }
+  .actions { margin-top: 16px; display: flex; gap: 8px; }
+  button { padding: 6px 12px; cursor: pointer; }
+  #empty-state { padding: 24px; color: #888; }
+  #export-bar { padding: 8px 12px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+  <div id="sidebar">
+    <input id="search" type="text" placeholder="Buscar verbete ou conceito..." autocomplete="off" />
+    <div id="results"></div>
+    <div id="export-bar">
+      <button id="export-btn">Exportar patch de verificação</button>
+    </div>
+  </div>
+  <div id="main">
+    <div id="detail-pane"><div id="empty-state">Selecione um verbete na busca à esquerda.</div></div>
+    <div id="image-pane"></div>
+  </div>
+
+<script>
+const STORAGE_KEY = 'analogico-verification-patch';
+
+function normalize(str) {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function loadPatch() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function savePatch(patch) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(patch));
+}
+
+function effectiveStatus(entry, patch) {
+  return patch[entry.id]?.verification_status || entry.verification_status;
+}
+
+let entries = [];
+let filtered = [];
+let activeId = null;
+
+async function init() {
+  const res = await fetch('./data/index.json');
+  if (!res.ok) {
+    document.getElementById('results').textContent =
+      'Não foi possível carregar data/index.json. Rode um servidor local (python -m http.server) a partir de apps/analogico/pilot/.';
+    return;
+  }
+  entries = await res.json();
+  filtered = entries;
+  renderResults();
+}
+
+function renderResults() {
+  const patch = loadPatch();
+  const container = document.getElementById('results');
+  container.innerHTML = '';
+  for (const entry of filtered) {
+    const div = document.createElement('div');
+    div.className = 'result' + (entry.id === activeId ? ' active' : '');
+    const status = effectiveStatus(entry, patch);
+    div.innerHTML = `<span class="status-dot status-${status}"></span>${entry.headword}`;
+    div.addEventListener('click', () => selectEntry(entry.id));
+    container.appendChild(div);
+  }
+}
+
+function selectEntry(id) {
+  activeId = id;
+  renderResults();
+  const entry = entries.find(e => e.id === id);
+  if (!entry) return;
+
+  const patch = loadPatch();
+  const status = effectiveStatus(entry, patch);
+
+  document.getElementById('detail-pane').innerHTML = `
+    <h2>${entry.headword}</h2>
+    <dl>
+      <dt>Tipo</dt><dd>${entry.entry_type}</dd>
+      <dt>Página impressa</dt><dd>${entry.printed_page_number ?? '—'}</dd>
+      <dt>Página PDF</dt><dd>${entry.pdf_page_index}</dd>
+      <dt>Referências</dt><dd>${(entry.references || []).join(', ') || '—'}</dd>
+      <dt>Termos relacionados</dt><dd>${(entry.related_terms || []).join(', ') || '—'}</dd>
+      <dt>Notas de extração</dt><dd>${entry.extraction_notes ?? '—'}</dd>
+      <dt>Status</dt><dd>${status}</dd>
+    </dl>
+    <p>${entry.raw_text}</p>
+    <div class="actions">
+      <button data-status="verified">Marcar verificado</button>
+      <button data-status="flagged">Sinalizar problema</button>
+      <button data-status="unverified">Limpar status</button>
+    </div>
+  `;
+  document.getElementById('image-pane').innerHTML =
+    `<img src="./data/${entry.page_image}" alt="Página original ${entry.pdf_page_index}" />`;
+
+  for (const btn of document.querySelectorAll('.actions button')) {
+    btn.addEventListener('click', () => markStatus(entry.id, btn.dataset.status));
+  }
+}
+
+function markStatus(id, status) {
+  const patch = loadPatch();
+  patch[id] = {
+    verification_status: status,
+    verified_by: status === 'unverified' ? null : (prompt('Seu nome/identificação:') || 'anônimo'),
+    verified_at: status === 'unverified' ? null : new Date().toISOString(),
+  };
+  savePatch(patch);
+  renderResults();
+  selectEntry(id);
+}
+
+document.getElementById('search').addEventListener('input', (e) => {
+  const q = normalize(e.target.value.trim());
+  filtered = q === ''
+    ? entries
+    : entries.filter(entry => normalize(entry.headword).includes(q));
+  renderResults();
+});
+
+document.getElementById('export-btn').addEventListener('click', () => {
+  const patch = loadPatch();
+  const blob = new Blob([JSON.stringify(patch, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'verification-patch.json';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+init();
+</script>
+</body>
+</html>
